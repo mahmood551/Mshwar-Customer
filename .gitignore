@@ -1,0 +1,18 @@
+# FVM Version Cache
+.fvm/build/
+
+# Specific build artifacts
+build/app/intermediates/intermediary_bundle/release/packageReleaseBundle/intermediary-bundle.aab
+build/app/intermediates/intermediary_bundle/release/intermediary-bundle.aab
+build/app/intermediates/module_bundle/release/base.zip
+
+# General build directory
+build/
+
+.dart_tool/
+build/
+android/.kotlin/
+
+# Android signing credentials
+android/key.properties
+android/*.jks

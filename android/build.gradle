@@ -1,0 +1,72 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.9.1'
+        classpath 'com.google.gms:google-services:4.4.2'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.buildDir = '../build'
+
+subprojects {
+    project.plugins.withId("com.android.library") {
+        def androidExt = project.extensions.findByName('android')
+        def manifestFile = file("${project.projectDir}/src/main/AndroidManifest.xml")
+
+        if (androidExt != null && androidExt.namespace == null && manifestFile.exists()) {
+            def manifestText = manifestFile.text
+            def matcher = (manifestText =~ /package="([^"]+)"/)
+            if (matcher.find()) {
+                androidExt.namespace = matcher.group(1)
+            } else if (project.group != null && project.group.toString() != 'unspecified') {
+                androidExt.namespace = project.group.toString()
+            }
+        }
+    }
+
+    afterEvaluate { project ->
+        def manifestFile = file("${project.projectDir}/src/main/AndroidManifest.xml")
+        if (manifestFile.exists()) {
+            def text = manifestFile.text
+            if (text.contains('package=')) {
+                manifestFile.text = text.replaceFirst(/\s+package="[^"]*"/, '')
+            }
+        }
+    }
+}
+
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+    project.evaluationDependsOn(':app')
+
+    configurations.configureEach {
+        resolutionStrategy {
+            force 'pl.droidsonroids.gif:android-gif-drawable:1.2.25'
+        }
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions {
+            jvmTarget = "17"
+        }
+    }
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}
