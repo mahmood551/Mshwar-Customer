@@ -113,8 +113,8 @@ class API {
   /* Subscription APIs */
   static String get subscriptionSettings => "${baseUrl}subscription/settings";
   static String get subscriptionCalculatePrice =>
-      "${baseUrl}subscription/calculate-price";
-  static String get subscriptionCreate => "${baseUrl}subscription/create";
+      "${baseUrl}subscription/quote";
+  static String get subscriptionCreate => "${baseUrl}subscription/create-quoted";
   static String get subscriptionConfirmPayment =>
       "${baseUrl}subscription/confirm-payment";
   static String get subscriptionPayWallet =>

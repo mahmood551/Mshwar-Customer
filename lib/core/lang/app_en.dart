@@ -1,4 +1,14 @@
 const Map<String, String> enUS = {
+  'Awaiting route quote': 'Awaiting route quote',
+  'Distance charge per trip': 'Distance charge per trip',
+  'Pickup zone charge per trip': 'Pickup zone charge per trip',
+  'Destination zone charge per trip': 'Destination zone charge per trip',
+  'Calculating route and price...': 'Calculating route and price...',
+  'Refresh price': 'Refresh price',
+  'Could not calculate the price. Please retry.': 'Could not calculate the price. Please retry.',
+  'Price expired. Refresh the quote before continuing.': 'Price expired. Refresh the quote before continuing.',
+  'Please review the updated price before creating your subscription.': 'Please review the updated price before creating your subscription.',
+
   // ============================================
   // SPLASH SCREEN
   // ============================================

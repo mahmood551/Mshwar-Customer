@@ -102,7 +102,7 @@ class CreateSubscriptionScreen extends StatelessWidget {
               controller.destinationAddress, // Pass reactive address value
             ),
 
-            // Distance (auto-calculated or manual)
+            // Distance returned by the current server quote
             const SizedBox(height: 12),
             Obx(() => Container(
                   padding:
@@ -130,7 +130,9 @@ class CreateSubscriptionScreen extends StatelessWidget {
                             : Colors.black54,
                       ),
                       CustomText(
-                        text: '${controller.distanceKm.value} ${'KM'.tr}',
+                        text: controller.priceData.value == null
+                            ? 'Awaiting route quote'.tr
+                            : '${controller.priceData.value!.distanceKm} ${'KM'.tr}',
                         size: 16,
                         weight: FontWeight.bold,
                         color: themeChange.getThem()
@@ -257,12 +259,11 @@ class CreateSubscriptionScreen extends StatelessWidget {
             // Create Subscription Button (without payment - approval required first)
             Obx(() => CustomButton(
                   btnName: 'Create Subscription'.tr,
-                  ontap: controller.isPriceLoading.value ||
-                          controller.priceData.value == null
+                  ontap: controller.isCreating.value || !controller.hasValidQuote
                       ? null
                       : () => _createSubscriptionOnly(
                           context, controller, themeChange),
-                  isLoading: controller.isPriceLoading.value,
+                  isLoading: controller.isPriceLoading.value || controller.isCreating.value,
                   icon: const Icon(Icons.check_circle,
                       size: 20, color: Colors.white),
                   borderRadius: 14,
@@ -748,6 +749,12 @@ class CreateSubscriptionScreen extends StatelessWidget {
                   '${price.kmPrice} ${'KWD'.tr}/${'KM'.tr}', themeChange),
               _buildPriceRow(
                   'Distance'.tr, '${price.distanceKm} ${'KM'.tr}', themeChange),
+              _buildPriceRow('Distance charge per trip'.tr,
+                  '${price.kmFare} ${'KWD'.tr}', themeChange),
+              _buildPriceRow('Pickup zone charge per trip'.tr,
+                  '${price.pickupZoneFare} ${'KWD'.tr}', themeChange),
+              _buildPriceRow('Destination zone charge per trip'.tr,
+                  '${price.dropoffZoneFare} ${'KWD'.tr}', themeChange),
               _buildPriceRow('Single Trip Price'.tr,
                   '${price.singleTripPrice} ${'KWD'.tr}', themeChange),
               _buildPriceRow(
@@ -776,11 +783,20 @@ class CreateSubscriptionScreen extends StatelessWidget {
             ] else
               Center(
                 child: CustomText(
-                  text: 'Fill in all details to see price'.tr,
+                  text: controller.isPriceLoading.value
+                      ? 'Calculating route and price...'.tr
+                      : controller.priceError.value.isNotEmpty
+                          ? controller.priceError.value
+                          : 'Fill in all details to see price'.tr,
                   size: 14,
                   color:
                       themeChange.getThem() ? Colors.white54 : Colors.black45,
                 ),
+              ),
+            if (controller.priceError.value.isNotEmpty && !controller.isPriceLoading.value)
+              TextButton(
+                onPressed: () => controller.calculatePrice(),
+                child: Text('Refresh price'.tr),
               ),
           ],
         ),
