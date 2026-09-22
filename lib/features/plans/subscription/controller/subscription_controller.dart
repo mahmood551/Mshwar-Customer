@@ -16,6 +16,16 @@ import 'package:intl/intl.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 class SubscriptionController extends GetxController {
+  SubscriptionController({http.Client? quoteClient})
+      : _quoteClient = quoteClient ?? http.Client();
+
+  final http.Client _quoteClient;
+  int _quoteRequestId = 0;
+  String? _quotedInputs;
+  Timer? _quoteExpiryTimer;
+  final priceError = ''.obs;
+  final isCreating = false.obs;
+
   // Settings
   var settingsModel = SubscriptionSettingsModel().obs;
   var isSettingsLoading = true.obs;
@@ -75,6 +85,9 @@ class SubscriptionController extends GetxController {
   @override
   void onClose() {
     _settingsSubscription?.cancel();
+    _quoteRequestId++;
+    _quoteExpiryTimer?.cancel();
+    _quoteClient.close();
     homeAddressController.dispose();
     destinationAddressController.dispose();
     distanceController.dispose();
@@ -202,56 +215,116 @@ class SubscriptionController extends GetxController {
     }
   }
 
-  /// Calculate subscription price
-  Future<void> calculatePrice() async {
-    if (distanceKm.value <= 0 ||
-        startDate.value == null ||
-        endDate.value == null) {
-      return;
+  Map<String, dynamic>? _pricingInputs() {
+    if (homeAddress.value.isEmpty || destinationAddress.value.isEmpty ||
+        startDate.value == null || endDate.value == null ||
+        selectedWorkingDays.isEmpty || endDate.value!.isBefore(startDate.value!)) {
+      return null;
     }
+    if ((homeLatitude.value == 0 && homeLongitude.value == 0) ||
+        (destinationLatitude.value == 0 && destinationLongitude.value == 0)) {
+      return null;
+    }
+    final days = selectedWorkingDays.toList()..sort();
+    return {
+      'home_latitude': homeLatitude.value,
+      'home_longitude': homeLongitude.value,
+      'destination_latitude': destinationLatitude.value,
+      'destination_longitude': destinationLongitude.value,
+      'trip_type': tripType.value,
+      'start_date': DateFormat('yyyy-MM-dd').format(startDate.value!),
+      'end_date': DateFormat('yyyy-MM-dd').format(endDate.value!),
+      'working_days': days,
+    };
+  }
 
+  void _invalidateQuote() {
+    _quoteRequestId++;
+    _quoteExpiryTimer?.cancel();
+    _quotedInputs = null;
+    priceData.value = null;
+    distanceKm.value = 0;
+    distanceController.clear();
+    isPriceLoading.value = false;
+  }
+
+  bool get hasValidQuote {
+    final quote = priceData.value;
+    final expiry = DateTime.tryParse(quote?.quoteExpiresAt ?? '');
+    final inputs = _pricingInputs();
+    return quote != null && (quote.quoteToken?.isNotEmpty ?? false) &&
+        expiry != null && expiry.isAfter(DateTime.now()) && inputs != null &&
+        _quotedInputs == jsonEncode(inputs) && !isPriceLoading.value;
+  }
+
+  /// The server alone resolves route distance, zones and the final price.
+  Future<void> calculatePrice() async {
+    _invalidateQuote();
+    priceError.value = '';
+    final inputs = _pricingInputs();
+    if (inputs == null) return;
+    final requestId = _quoteRequestId;
+    isPriceLoading.value = true;
     try {
-      isPriceLoading.value = true;
-
-      final body = {
-        'distance_km': distanceKm.value.toString(),
-        'trip_type': tripType.value,
-        'start_date': DateFormat('yyyy-MM-dd').format(startDate.value!),
-        'end_date': DateFormat('yyyy-MM-dd').format(endDate.value!),
-        'working_days': selectedWorkingDays.toList(),
-      };
-
-      final response = await http.post(
+      final response = await _quoteClient.post(
         Uri.parse(API.subscriptionCalculatePrice),
         headers: API.header,
-        body: json.encode(body),
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final model = SubscriptionPriceModel.fromJson(data);
-        if (model.success == 'success') {
-          priceData.value = model.data;
-        } else {
-          ShowToastDialog.showToast(
-              model.error?.toString() ?? 'Failed to calculate price'.tr);
-        }
+        body: jsonEncode(inputs),
+      ).timeout(const Duration(seconds: 30));
+      if (requestId != _quoteRequestId) return;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode != 200 || data['success'] != 'success') {
+        priceError.value = 'Could not calculate the price. Please retry.'.tr;
+        return;
       }
-    } catch (e) {
-      print('Error calculating price: $e');
+      final quote = SubscriptionPriceData.fromJson(data['data']);
+      final expiry = DateTime.tryParse(quote.quoteExpiresAt ?? '');
+      final distance = double.tryParse(quote.distanceKm ?? '');
+      if (expiry == null || !expiry.isAfter(DateTime.now()) ||
+          (quote.quoteToken?.isEmpty ?? true) || distance == null || distance <= 0 ||
+          double.tryParse(quote.totalPrice ?? '') == null ||
+          double.tryParse(quote.zoneFare ?? '') == null ||
+          double.tryParse(quote.kmFare ?? '') == null ||
+          double.tryParse(quote.pickupZoneFare ?? '') == null ||
+          double.tryParse(quote.dropoffZoneFare ?? '') == null) {
+        priceError.value = 'Could not calculate the price. Please retry.'.tr;
+        return;
+      }
+      // A late response must never restore a quote for a previous selection.
+      if (jsonEncode(_pricingInputs()) != jsonEncode(inputs)) return;
+      _quotedInputs = jsonEncode(inputs);
+      priceData.value = quote;
+      distanceKm.value = distance;
+      distanceController.text = quote.distanceKm!;
+      _quoteExpiryTimer = Timer(expiry.difference(DateTime.now()), () {
+        _invalidateQuote();
+        priceError.value = 'Price expired. Refresh the quote before continuing.'.tr;
+      });
+    } catch (_) {
+      if (requestId == _quoteRequestId) {
+        priceError.value = 'Could not calculate the price. Please retry.'.tr;
+      }
     } finally {
-      isPriceLoading.value = false;
+      if (requestId == _quoteRequestId) isPriceLoading.value = false;
     }
   }
 
   /// Create a new subscription
   Future<SubscriptionData?> createSubscription() async {
+    if (isCreating.value) return null;
+    if (!hasValidQuote) {
+      await calculatePrice();
+      ShowToastDialog.showToast('Please review the updated price before creating your subscription.'.tr);
+      return null;
+    }
     if (!validateForm()) return null;
+    isCreating.value = true;
 
     try {
       ShowToastDialog.showLoader('Creating subscription...'.tr);
 
       final body = {
+        'quote_token': priceData.value!.quoteToken,
         'user_id': Preferences.getInt(Preferences.userId),
         'trip_type': tripType.value,
         'home_address': homeAddress.value,
@@ -279,11 +352,11 @@ class SubscriptionController extends GetxController {
         'payment_method': 'app',
       };
 
-      final response = await http.post(
+      final response = await _quoteClient.post(
         Uri.parse(API.subscriptionCreate),
         headers: API.header,
         body: json.encode(body),
-      );
+      ).timeout(const Duration(seconds: 30));
 
       ShowToastDialog.closeLoader();
 
@@ -302,6 +375,12 @@ class SubscriptionController extends GetxController {
               model.error?.toString() ?? 'Failed to create subscription'.tr);
         }
       } else {
+        if (response.statusCode == 422) {
+          _invalidateQuote();
+          await calculatePrice();
+          ShowToastDialog.showToast('Please review the updated price before creating your subscription.'.tr);
+          return null;
+        }
         final data = json.decode(response.body);
         ShowToastDialog.showToast(
             data['error']?.toString() ?? 'Failed to create subscription'.tr);
@@ -315,6 +394,8 @@ class SubscriptionController extends GetxController {
     } catch (e) {
       ShowToastDialog.closeLoader();
       ShowToastDialog.showToast('${'Payment error:'.tr} $e');
+    } finally {
+      isCreating.value = false;
     }
     return null;
   }
@@ -449,6 +530,8 @@ class SubscriptionController extends GetxController {
 
   /// Reset form to initial state
   void resetForm() {
+    _invalidateQuote();
+    priceError.value = '';
     tripType.value = 'two_way';
     homeAddress.value = '';
     homeLatitude.value = 0.0;
@@ -481,7 +564,7 @@ class SubscriptionController extends GetxController {
     homeLatitude.value = lat;
     homeLongitude.value = lng;
     homeAddressController.text = address;
-    _updateDistance();
+    calculatePrice();
   }
 
   /// Set destination location from picker
@@ -490,62 +573,8 @@ class SubscriptionController extends GetxController {
     destinationLatitude.value = lat;
     destinationLongitude.value = lng;
     destinationAddressController.text = address;
-    _updateDistance();
+    calculatePrice();
   }
-
-  /// Calculate distance between home and destination
-  void _updateDistance() {
-    if (homeLatitude.value != 0 &&
-        homeLongitude.value != 0 &&
-        destinationLatitude.value != 0 &&
-        destinationLongitude.value != 0) {
-      // Calculate haversine distance
-      final lat1 = homeLatitude.value;
-      final lon1 = homeLongitude.value;
-      final lat2 = destinationLatitude.value;
-      final lon2 = destinationLongitude.value;
-
-      const R = 6371.0; // Earth's radius in km
-      final dLat = _toRad(lat2 - lat1);
-      final dLon = _toRad(lon2 - lon1);
-      final a = _sin(dLat / 2) * _sin(dLat / 2) +
-          _cos(_toRad(lat1)) *
-              _cos(_toRad(lat2)) *
-              _sin(dLon / 2) *
-              _sin(dLon / 2);
-      final c = 2 * _atan2(_sqrt(a), _sqrt(1 - a));
-      final distance = R * c;
-
-      distanceKm.value = double.parse(distance.toStringAsFixed(2));
-      distanceController.text = distanceKm.value.toString();
-
-      // Auto-calculate price
-      calculatePrice();
-    }
-  }
-
-  double _toRad(double deg) => deg * 3.14159265359 / 180;
-  double _sin(double x) => x - (x * x * x) / 6 + (x * x * x * x * x) / 120;
-  double _cos(double x) => 1 - (x * x) / 2 + (x * x * x * x) / 24;
-  double _sqrt(double x) {
-    if (x <= 0) return 0;
-    double guess = x / 2;
-    for (int i = 0; i < 10; i++) {
-      guess = (guess + x / guess) / 2;
-    }
-    return guess;
-  }
-
-  double _atan2(double y, double x) {
-    if (x > 0) return _atan(y / x);
-    if (x < 0 && y >= 0) return _atan(y / x) + 3.14159265359;
-    if (x < 0 && y < 0) return _atan(y / x) - 3.14159265359;
-    if (x == 0 && y > 0) return 3.14159265359 / 2;
-    if (x == 0 && y < 0) return -3.14159265359 / 2;
-    return 0;
-  }
-
-  double _atan(double x) => x - (x * x * x) / 3 + (x * x * x * x * x) / 5;
 
   /// Toggle working day
   void toggleWorkingDay(int day) {

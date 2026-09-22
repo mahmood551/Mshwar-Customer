@@ -1,4 +1,14 @@
 const Map<String, String> arAE = {
+  'Awaiting route quote': 'بانتظار حساب المسار',
+  'Distance charge per trip': 'تكلفة المسافة لكل رحلة',
+  'Pickup zone charge per trip': 'رسوم منطقة الانطلاق لكل رحلة',
+  'Destination zone charge per trip': 'رسوم منطقة الوصول لكل رحلة',
+  'Calculating route and price...': 'جارٍ حساب المسار والسعر...',
+  'Refresh price': 'تحديث السعر',
+  'Could not calculate the price. Please retry.': 'تعذر حساب السعر. يرجى المحاولة مرة أخرى.',
+  'Price expired. Refresh the quote before continuing.': 'انتهت صلاحية السعر. يرجى تحديثه قبل المتابعة.',
+  'Please review the updated price before creating your subscription.': 'يرجى مراجعة السعر المحدث قبل إنشاء الاشتراك.',
+
   // ============================================
   // SPLASH SCREEN
   // ============================================

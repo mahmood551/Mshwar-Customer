@@ -409,6 +409,12 @@ class SubscriptionPriceModel {
 }
 
 class SubscriptionPriceData {
+  String? pickupZoneFare;
+  String? dropoffZoneFare;
+  String? zoneFare;
+  String? kmFare;
+  String? quoteToken;
+  String? quoteExpiresAt;
   String? distanceKm;
   String? kmPrice;
   String? singleTripPrice;
@@ -418,6 +424,12 @@ class SubscriptionPriceData {
   String? tripType;
 
   SubscriptionPriceData({
+    this.pickupZoneFare,
+    this.dropoffZoneFare,
+    this.zoneFare,
+    this.kmFare,
+    this.quoteToken,
+    this.quoteExpiresAt,
     this.distanceKm,
     this.kmPrice,
     this.singleTripPrice,
@@ -428,6 +440,12 @@ class SubscriptionPriceData {
   });
 
   SubscriptionPriceData.fromJson(Map<String, dynamic> json) {
+    pickupZoneFare = json['pickup_zone_fare']?.toString();
+    dropoffZoneFare = json['dropoff_zone_fare']?.toString();
+    zoneFare = json['zone_fare']?.toString();
+    kmFare = json['km_fare']?.toString();
+    quoteToken = json['quote_token']?.toString();
+    quoteExpiresAt = json['quote_expires_at']?.toString();
     distanceKm = json['distance_km']?.toString();
     kmPrice = json['km_price']?.toString();
     singleTripPrice = json['single_trip_price']?.toString();
@@ -439,6 +457,12 @@ class SubscriptionPriceData {
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
+    data['pickup_zone_fare'] = pickupZoneFare;
+    data['dropoff_zone_fare'] = dropoffZoneFare;
+    data['zone_fare'] = zoneFare;
+    data['km_fare'] = kmFare;
+    data['quote_token'] = quoteToken;
+    data['quote_expires_at'] = quoteExpiresAt;
     data['distance_km'] = distanceKm;
     data['km_price'] = kmPrice;
     data['single_trip_price'] = singleTripPrice;
